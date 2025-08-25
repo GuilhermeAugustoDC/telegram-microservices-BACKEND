@@ -1,22 +1,22 @@
 # Node.js (frontend)
-frontend/node_modules/
-frontend/dist/
-frontend/.env.local
+node_modules/
+dist/
+.env.local
 
 # Python (backend)
-backend/__pycache__/
-backend/app/__pycache__/
-backend/app/api/__pycache__/
-backend/app/models/__pycache__/
-backend/app/schemas/__pycache__/
-backend/app/api/routes/__pycache__/
-backend/app/workers/__pycache__/
-backend/sessions/
-backend/.env
-backend/telegram_automation.db
+__pycache__/
+app/__pycache__/
+app/api/__pycache__/
+app/models/__pycache__/
+app/schemas/__pycache__/
+app/api/routes/__pycache__/
+app/workers/__pycache__/
+sessions/
+.env
+telegram_automation.db
 
 # Vite
-frontend/.vite/
+.vite/
 
 # VSCode
 .vscode/
