@@ -15,8 +15,9 @@ from datetime import datetime
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+from app.config.config import settings
 
-load_dotenv() # .env file is now at the backend root
+load_dotenv()  # .env file is now at the backend root
 
 Base = declarative_base()
 
@@ -55,7 +56,9 @@ class UserSession(Base):
     channels_last_updated = Column(DateTime, nullable=True)
 
     automations = relationship("Automation", back_populates="session")
-    cached_channels = relationship("CachedChannel", back_populates="session", cascade="all, delete-orphan")
+    cached_channels = relationship(
+        "CachedChannel", back_populates="session", cascade="all, delete-orphan"
+    )
 
 
 class Automation(Base):
@@ -107,7 +110,7 @@ class Chat(Base):
         back_populates="source_chats",
         lazy="dynamic",
     )
-    
+
     destination_automations = relationship(
         "Automation",
         secondary=automation_destinations,
@@ -116,15 +119,19 @@ class Chat(Base):
     )
 
     # Relacionamento com mídias coletadas
-    collected_media = relationship("CollectedMedia", back_populates="chat", cascade="all, delete-orphan")
+    collected_media = relationship(
+        "CollectedMedia", back_populates="chat", cascade="all, delete-orphan"
+    )
 
 
 class CachedChannel(Base):
     __tablename__ = "cached_channels"
 
     id = Column(Integer, primary_key=True, index=True)
-    session_id = Column(Integer, ForeignKey('user_sessions.id', ondelete="CASCADE"), nullable=False)
-    
+    session_id = Column(
+        Integer, ForeignKey("user_sessions.id", ondelete="CASCADE"), nullable=False
+    )
+
     channel_id = Column(String(255), nullable=False)
     title = Column(String(255))
     username = Column(String(255), nullable=True)
@@ -134,24 +141,17 @@ class CachedChannel(Base):
 
     session = relationship("UserSession", back_populates="cached_channels")
 
-    __table_args__ = (UniqueConstraint('session_id', 'channel_id', name='_session_channel_uc'),)
+    __table_args__ = (
+        UniqueConstraint("session_id", "channel_id", name="_session_channel_uc"),
+    )
 
 
 # Configuração do banco de dados
 
-# O diretório base do projeto agora é a pasta 'backend'
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parent  # backend/
 
-
-# Define o caminho do banco de dados dentro da pasta 'backend'
-DB_NAME = "telegram_automation.db"
-DB_PATH = str(BASE_DIR / DB_NAME)
-
-# Usa o caminho absoluto para o SQLite
-DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DB_PATH}")
-
-
-engine = create_engine(DATABASE_URL)
+print(settings.DATABASE_URL)
+engine = create_engine(settings.DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
@@ -177,20 +177,26 @@ class CollectedMedia(Base):
     __tablename__ = "collected_media"
 
     id = Column(Integer, primary_key=True, index=True)
-    chat_id = Column(String(255), ForeignKey("chats.chat_id", ondelete="CASCADE"), nullable=False)
+    chat_id = Column(
+        String(255), ForeignKey("chats.chat_id", ondelete="CASCADE"), nullable=False
+    )
     message_id = Column(Integer, nullable=False)
-    media_type = Column(String(50), nullable=False)  # photo, video, document, audio, etc.
+    media_type = Column(
+        String(50), nullable=False
+    )  # photo, video, document, audio, etc.
     file_id = Column(String(255), nullable=False)
     file_name = Column(String(255))
     file_size = Column(Integer)
     caption = Column(String(4096))
     collected_at = Column(DateTime, default=datetime.utcnow)
-    
+
     # Relacionamento com chat
     chat = relationship("Chat", back_populates="collected_media")
-    
+
     # Índice único para evitar duplicatas
-    __table_args__ = (UniqueConstraint("chat_id", "message_id", name="uix_chat_message"),)
+    __table_args__ = (
+        UniqueConstraint("chat_id", "message_id", name="uix_chat_message"),
+    )
 
 
 def create_tables():

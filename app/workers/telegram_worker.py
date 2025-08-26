@@ -3,7 +3,7 @@ import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import Message
 import logging
-
+from app.config.config import settings
 from ..models.database import (
     SessionLocal,
     UserSession,
@@ -42,7 +42,8 @@ class TelegramWorker:
 
     async def start_client(self, session):
         """Inicia um cliente Pyrogram para uma sessão"""
-        session_path = os.path.join("sessions", session.session_file)
+
+        session_path = settings.SESSIONS_DIR / session.session_file
 
         # Verifica se o arquivo de sessão existe
         if not os.path.exists(session_path):

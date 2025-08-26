@@ -5,9 +5,9 @@ Write-Host "🚀 Iniciando Backend do Telegram MicroSaaS..." -ForegroundColor Gr
 Write-Host "📍 Diretório: $(Get-Location)" -ForegroundColor Yellow
 
 # Verifica se o ambiente virtual existe
-if (Test-Path "..\venv\Scripts\activate.ps1") {
+if (Test-Path "venv\Scripts\activate.ps1") {
     Write-Host "✅ Ativando ambiente virtual..." -ForegroundColor Cyan
-    & "..\venv\Scripts\activate.ps1"
+    & "venv\Scripts\activate.ps1"
 }
 else {
     Write-Host "⚠️  Ambiente virtual não encontrado. Certifique-se de que está na pasta backend." -ForegroundColor Red
