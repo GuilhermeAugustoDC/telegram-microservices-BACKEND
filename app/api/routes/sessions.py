@@ -23,6 +23,7 @@ from app.models.database import UserSession
 from app.api.dependencies import get_db
 from app.config.config import settings
 from pathlib import Path
+
 router = APIRouter()
 
 """Endpoint para fazer upload de um arquivo .session"""
@@ -70,7 +71,10 @@ async def list_sessions(db: Session = Depends(get_db)):
 @router.get("/sessions/download/{phone_number}")
 async def download_session(phone_number: str):
 
-    file_path = f"sessions/{phone_number}.session"
+    file_path = (
+        settings.SESSIONS_DIR / f"{phone_number}{settings.SESSION_EXTENSION_FILE}"
+    )
+
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="Arquivo de sessão não encontrado")
     return FileResponse(

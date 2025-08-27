@@ -17,7 +17,7 @@ class Settings:
     PORT = int(os.getenv("PORT", 8000))
     DEBUG = os.getenv("DEBUG", "False").lower() == "true"
     HOST_AND_PORT = f"{HOST}:{PORT}"
-    
+
     # Configurações do Telegram
     API_ID = os.getenv("API_ID")
     API_HASH = os.getenv("API_HASH")
