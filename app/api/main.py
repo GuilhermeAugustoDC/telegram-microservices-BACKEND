@@ -10,12 +10,9 @@ from app.api.routes import automations, sessions, channels, logs
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-
-    # Cria as tabelas do banco de dados
     create_tables()
     print("Startup complete. Database tables created.")
     yield
-    # Código para rodar no shutdown (se necessário)
     print("Shutdown complete.")
 
 
@@ -25,7 +22,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Configuração do CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
