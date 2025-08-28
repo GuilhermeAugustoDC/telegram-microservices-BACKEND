@@ -16,6 +16,9 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.cpython-*.pyc
+*.cpython-*.pyo
+*.cpython-*.pyd
 
 # Bancos de Dados
 *.db

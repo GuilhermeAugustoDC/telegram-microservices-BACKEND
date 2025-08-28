@@ -14,6 +14,7 @@ active_clients = {}
 # Dicionário para rastrear tasks de forwarding/history por automation_id
 forwarding_tasks = {}  # {automation_id: asyncio.Task}
 
+
 async def start_automation_client(automation):
     """Garante que um cliente para a sessão está ativo e adiciona um handler para a automação."""
     session_name = automation.session.session_file.replace(
@@ -132,7 +133,9 @@ async def stop_automation_client(automation):
             try:
                 task.cancel()
                 await asyncio.sleep(0)  # Permite propagação do cancelamento
-                logging.info(f"Task de forwarding/history para automação {automation_id} cancelada.")
+                logging.info(
+                    f"Task de forwarding/history para automação {automation_id} cancelada."
+                )
             except Exception as e:
                 logging.warning(f"Falha ao cancelar task de forwarding: {e}")
         await client.stop()
