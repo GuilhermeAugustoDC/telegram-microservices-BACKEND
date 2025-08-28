@@ -16,9 +16,9 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
-*.cpython-311
-*.cpython-311
-*.cpython-311
+*.cpython-311.pyc
+*.cpython-311.pyo
+*.cpython-311.pyd
 
 # Bancos de Dados
 *.db
@@ -48,4 +48,3 @@ logs/
 build/
 dist/
 *.egg-info/
-
