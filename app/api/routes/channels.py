@@ -30,7 +30,9 @@ class ChannelInfo(BaseModel):
 
 @router.get("/sessions/{session_id}/channels", response_model=List[ChannelInfo])
 async def get_user_channels(
-    session_id: int, incremental: bool = False, db: Session = Depends(get_db)
+    session_id: int,
+    incremental: bool = False,
+    db: Session = Depends(get_db),
 ):
     session = db.query(UserSession).filter(UserSession.id == session_id).first()
     if not session:
@@ -73,6 +75,8 @@ async def get_user_channels(
         f"channels:{'incremental_' if incremental else ''}fetch:session_{session_id}",
     )
     return await fetch_and_cache_channels(session, db, incremental)
+
+
 
 
 async def fetch_and_cache_channels(
@@ -165,7 +169,7 @@ async def fetch_and_cache_channels(
                             "photo_url": photo_url,
                         }
 
-                        # Adiciona ao cache
+
                         cached_channel = CachedChannel(
                             session_id=session.id, **channel_data
                         )

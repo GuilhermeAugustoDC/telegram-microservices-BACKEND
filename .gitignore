@@ -1,29 +1,44 @@
-# Node.js (frontend)
-node_modules/
-dist/
-.env.local
-
-# Python (backend)
-__pycache__/
-app/__pycache__/
-app/api/__pycache__/
-app/models/__pycache__/
-app/schemas/__pycache__/
-app/api/routes/__pycache__/
-app/workers/__pycache__/
-sessions/
+# Arquivos de Ambiente
 .env
-telegram_automation.db
+.env.*
+!.env.example
 
-# Vite
-.vite/
+# Ambiente Virtual Python
+venv/
+.venv/
+env/
+ENV/
 
-# VSCode
+# Arquivos de cache e compilados do Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Bancos de Dados
+*.db
+*.sqlite
+*.sqlite3
+
+# Arquivos de Sessão do Pyrogram
+*.session
+*.session-journal
+
+# Arquivos de IDE e editores
 .vscode/
+.idea/
+*.swp
+*.swo
+
+# Arquivos de sistema operacional
+.DS_Store
+Thumbs.db
 
 # Logs
 *.log
+logs/
+*.log.*
 
-#Virtual Env
-venv/
-.venv/
+# Arquivos de build e distribuição
+build/
+dist/
+*.egg-info/

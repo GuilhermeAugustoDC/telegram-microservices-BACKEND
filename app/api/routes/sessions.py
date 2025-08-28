@@ -2,11 +2,7 @@ from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
-    UploadFile,
-    File,
-    Form,
     WebSocket,
-    WebSocketDisconnect,
 )
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
@@ -14,7 +10,6 @@ from typing import List
 from pyrogram import Client
 from pyrogram.errors import SessionPasswordNeeded, PhoneCodeInvalid, PhoneNumberInvalid
 import os
-import shutil
 import json
 from datetime import datetime
 
@@ -22,7 +17,6 @@ from app.schemas.session import Session as SessionSchema
 from app.models.database import UserSession
 from app.api.dependencies import get_db
 from app.config.config import settings
-from pathlib import Path
 
 router = APIRouter()
 
@@ -104,7 +98,10 @@ async def delete_session(session_id: int, db: Session = Depends(get_db)):
 
 
 @router.websocket("/ws/generate_session")
-async def generate_session_ws(websocket: WebSocket, db: Session = Depends(get_db)):
+async def generate_session_ws(
+    websocket: WebSocket,
+    db: Session = Depends(get_db),
+):
     await websocket.accept()
     client = None
     try:
@@ -142,6 +139,7 @@ async def generate_session_ws(websocket: WebSocket, db: Session = Depends(get_db
                 await client.sign_in(
                     phone_number, sent_code.phone_code_hash, phone_code
                 )
+
 
                 # arquivo da sessão
                 session_filename = f"{phone_number}.session"
@@ -184,6 +182,7 @@ async def generate_session_ws(websocket: WebSocket, db: Session = Depends(get_db
                 password_data = await websocket.receive_json()
                 password = password_data["value"]
                 await client.check_password(password)
+
 
                 session_filename = f"{phone_number}.session"
                 session_data = UserSession(

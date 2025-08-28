@@ -12,7 +12,6 @@ from sqlalchemy import (
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
-import os
 from pathlib import Path
 from dotenv import load_dotenv
 from app.config.config import settings
@@ -55,13 +54,13 @@ class UserSession(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     channels_last_updated = Column(DateTime, nullable=True)
 
-    automations = relationship("Automation", back_populates="session")
+    automations = relationship("AutomationModel", back_populates="session")
     cached_channels = relationship(
         "CachedChannel", back_populates="session", cascade="all, delete-orphan"
     )
 
 
-class Automation(Base):
+class AutomationModel(Base):
     __tablename__ = "automations"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -74,23 +73,17 @@ class Automation(Base):
     session = relationship("UserSession", back_populates="automations")
 
     # Relacionamento muitos-para-muitos com canais de origem
-    source_chats = relationship(
+    source_channels = relationship(
         "Chat",
         secondary=automation_sources,
         back_populates="source_automations",
-        lazy="dynamic",
-        cascade="all, delete",
-        passive_deletes=True,
     )
 
-    # Relacionamento muitos-para-muitos com destinos
-    destination_chats = relationship(
+    # Relacionamento muitos-para-muitos com canais de destino
+    destination_channels = relationship(
         "Chat",
         secondary=automation_destinations,
         back_populates="destination_automations",
-        lazy="dynamic",
-        cascade="all, delete",
-        passive_deletes=True,
     )
 
 
@@ -103,24 +96,14 @@ class Chat(Base):
     is_channel = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    # Relacionamentos com automações
+    # Relacionamentos para automações onde este chat é uma origem ou destino
     source_automations = relationship(
-        "Automation",
-        secondary=automation_sources,
-        back_populates="source_chats",
-        lazy="dynamic",
+        "AutomationModel", secondary=automation_sources, back_populates="source_channels"
     )
-
     destination_automations = relationship(
-        "Automation",
+        "AutomationModel",
         secondary=automation_destinations,
-        back_populates="destination_chats",
-        lazy="dynamic",
-    )
-
-    # Relacionamento com mídias coletadas
-    collected_media = relationship(
-        "CollectedMedia", back_populates="chat", cascade="all, delete-orphan"
+        back_populates="destination_channels",
     )
 
 
@@ -177,26 +160,24 @@ class CollectedMedia(Base):
     __tablename__ = "collected_media"
 
     id = Column(Integer, primary_key=True, index=True)
-    chat_id = Column(
-        String(255), ForeignKey("chats.chat_id", ondelete="CASCADE"), nullable=False
-    )
-    message_id = Column(Integer, nullable=False)
-    media_type = Column(
-        String(50), nullable=False
-    )  # photo, video, document, audio, etc.
+    
+    # Identificador único e permanente do Telegram para o arquivo
+    file_unique_id = Column(String(255), unique=True, nullable=False, index=True)
+    
+    # Identificador do arquivo para reenvio
     file_id = Column(String(255), nullable=False)
-    file_name = Column(String(255))
+    
+    media_type = Column(String(50), nullable=False)  # ex: photo, video, document
+    mime_type = Column(String(100)) # ex: image/jpeg, video/mp4
     file_size = Column(Integer)
-    caption = Column(String(4096))
+    
+    # Opcional: ID do chat e da mensagem onde a mídia foi coletada pela primeira vez
+    original_chat_id = Column(String(255), ForeignKey("chats.chat_id", ondelete="SET NULL"))
+    original_message_id = Column(Integer)
+
+    caption = Column(String(4096)) # Legenda da mídia
+    
     collected_at = Column(DateTime, default=datetime.utcnow)
-
-    # Relacionamento com chat
-    chat = relationship("Chat", back_populates="collected_media")
-
-    # Índice único para evitar duplicatas
-    __table_args__ = (
-        UniqueConstraint("chat_id", "message_id", name="uix_chat_message"),
-    )
 
 
 def create_tables():

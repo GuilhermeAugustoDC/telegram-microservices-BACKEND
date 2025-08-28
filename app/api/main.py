@@ -3,7 +3,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
-import os
 import uvicorn
 from app.models.database import create_tables
 from app.api.routes import automations, sessions, channels, logs
@@ -14,7 +13,7 @@ async def lifespan(app: FastAPI):
 
     # Cria as tabelas do banco de dados
     create_tables()
-    print("Startup complete. Database tables created and sessions directory ensured.")
+    print("Startup complete. Database tables created.")
     yield
     # Código para rodar no shutdown (se necessário)
     print("Shutdown complete.")
@@ -36,7 +35,7 @@ app.add_middleware(
 )
 
 app.mount(
-    f"/app/static",
+    "/app/static",
     StaticFiles(directory=settings.PHOTO_GROUP_DIR),
     name="static",
 )

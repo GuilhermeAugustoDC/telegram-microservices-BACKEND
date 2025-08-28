@@ -27,13 +27,13 @@ class Automation(BaseModel):
     @classmethod
     def from_orm(cls, obj):
         # Converte objetos Chat para strings (chat_id)
-        source_chats = [chat.chat_id for chat in obj.source_chats]
-        destination_chats = [chat.chat_id for chat in obj.destination_chats]
+        source_chats = [chat.chat_id for chat in getattr(obj, 'source_channels', [])]
+        destination_chats = [chat.chat_id for chat in getattr(obj, 'destination_channels', [])]
         return cls(
             id=obj.id,
             name=obj.name,
             source_chats=source_chats,
-            destination_chats=destination_chats,
+            destination_chats=destination_chats,    
             session_id=obj.session_id,
             is_active=obj.is_active,
             created_at=obj.created_at,
