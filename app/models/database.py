@@ -98,7 +98,9 @@ class Chat(Base):
 
     # Relacionamentos para automações onde este chat é uma origem ou destino
     source_automations = relationship(
-        "AutomationModel", secondary=automation_sources, back_populates="source_channels"
+        "AutomationModel",
+        secondary=automation_sources,
+        back_populates="source_channels",
     )
     destination_automations = relationship(
         "AutomationModel",
@@ -160,23 +162,25 @@ class CollectedMedia(Base):
     __tablename__ = "collected_media"
 
     id = Column(Integer, primary_key=True, index=True)
-    
+
     # Identificador único e permanente do Telegram para o arquivo
     file_unique_id = Column(String(255), unique=True, nullable=False, index=True)
-    
+
     # Identificador do arquivo para reenvio
     file_id = Column(String(255), nullable=False)
-    
+
     media_type = Column(String(50), nullable=False)  # ex: photo, video, document
-    mime_type = Column(String(100)) # ex: image/jpeg, video/mp4
+    mime_type = Column(String(100))  # ex: image/jpeg, video/mp4
     file_size = Column(Integer)
-    
+
     # Opcional: ID do chat e da mensagem onde a mídia foi coletada pela primeira vez
-    original_chat_id = Column(String(255), ForeignKey("chats.chat_id", ondelete="SET NULL"))
+    original_chat_id = Column(
+        String(255), ForeignKey("chats.chat_id", ondelete="SET NULL")
+    )
     original_message_id = Column(Integer)
 
-    caption = Column(String(4096)) # Legenda da mídia
-    
+    caption = Column(String(4096))  # Legenda da mídia
+
     collected_at = Column(DateTime, default=datetime.utcnow)
 
 

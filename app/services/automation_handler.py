@@ -8,11 +8,8 @@ import asyncio
 from app.models.database import CollectedMedia
 from datetime import datetime
 
-# Estrutura para gerenciar clientes: { "session_name": { "client": Client, "handlers": { automation_id: {"handler": MessageHandler, "group": int} } } }
 active_clients = {}
-
-# Dicionário para rastrear tasks de forwarding/history por automation_id
-forwarding_tasks = {}  # {automation_id: asyncio.Task}
+forwarding_tasks = {}
 
 
 async def start_automation_client(automation):
