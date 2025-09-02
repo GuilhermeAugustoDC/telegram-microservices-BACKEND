@@ -7,9 +7,11 @@ from app.config.config import settings
 import asyncio
 from app.models.database import CollectedMedia
 from datetime import datetime
+from app.services.telegram_services import TelegramService
 
 active_clients = {}
 forwarding_tasks = {}
+telegram_service = TelegramService()
 
 
 async def start_automation_client(automation):
@@ -44,26 +46,11 @@ async def start_automation_client(automation):
         int(channel.chat_id) for channel in automation.destination_channels
     ]
 
-    # --- Bloco de depuração para verificar acesso aos canais ---
+    # Verificação de acesso aos canais usando TelegramService
     logging.info("--- INICIANDO VERIFICAÇÃO DE CANAIS ---")
     all_chat_ids = list(set(source_chat_ids + destination_chat_ids))
-    for chat_id in all_chat_ids:
-        try:
-            chat = await client.get_chat(chat_id)
-            logging.info(
-                f"[DEBUG] Acesso ao canal '{chat.title}' ({chat.id}) bem-sucedido."
-            )
-            # Tenta entrar no canal se for um canal público e o bot/user não for membro
-            if chat.username and not chat.is_member:
-                logging.info(f"[DEBUG] Tentando entrar no canal {chat.username}...")
-                await client.join_chat(chat.username)
-                logging.info(f"[DEBUG] Entrada no canal {chat.username} bem-sucedida.")
-        except Exception as e:
-            logging.error(
-                f"[ERRO DE DEBUG] Falha ao acessar ou entrar no canal {chat_id}: {e}"
-            )
+    await telegram_service.verify_and_join_channels(client, all_chat_ids)
     logging.info("--- FIM DA VERIFICAÇÃO DE CANAIS ---")
-    # --- Fim do bloco de depuração ---
 
     async def message_handler(client, message):
         logging.info(
@@ -172,35 +159,9 @@ async def forward_history(client, automation):
     )
 
 
-def get_media_info(message):
-    """Extrai o objeto de mídia e seus metadados de uma mensagem."""
-    media_types = [
-        "photo",
-        "video",
-        "audio",
-        "document",
-        "voice",
-        "video_note",
-        "sticker",
-        "animation",
-    ]
-    for media_type in media_types:
-        if hasattr(message, media_type) and getattr(message, media_type):
-            media = getattr(message, media_type)
-            return {
-                "media_type": media_type,
-                "file_id": media.file_id,
-                "file_unique_id": media.file_unique_id,
-                "file_size": getattr(media, "file_size", None),
-                "mime_type": getattr(media, "mime_type", None),
-                "caption": message.caption,
-            }
-    return None
-
-
 async def process_and_forward_message(client, message, destination_ids):
     """Processa uma mensagem, utiliza o cache de mídia se aplicável, e a encaminha."""
-    media_info = get_media_info(message)
+    media_info = await telegram_service.get_media_info(message)
 
     if not media_info:
         # Mensagem sem mídia, apenas encaminha
@@ -258,7 +219,9 @@ async def process_and_forward_message(client, message, destination_ids):
             logging.info(
                 f"[CACHE] Mídia {cached_media.file_unique_id} encontrada no cache. Reenviando via file_id."
             )
-            await send_media_from_cache(client, cached_media, destination_ids)
+            await telegram_service.send_media_from_cache(
+                client, cached_media, destination_ids
+            )
         else:
             logging.info(
                 f"[CACHE] Mídia {media_info['file_unique_id']} NÃO encontrada no cache. Salvando no banco..."
@@ -282,80 +245,17 @@ async def process_and_forward_message(client, message, destination_ids):
 
             for dest_id in destination_ids:
                 try:
-                    send_methods = {
-                        "photo": client.send_photo,
-                        "video": client.send_video,
-                        "audio": client.send_audio,
-                        "document": client.send_document,
-                        "voice": client.send_voice,
-                        "video_note": client.send_video_note,
-                        "sticker": client.send_sticker,
-                        "animation": client.send_animation,
-                    }
-                    send_func = send_methods.get(media_info["media_type"])
-                    if send_func:
-                        kwargs = {
-                            "chat_id": dest_id,
-                            media_info["media_type"]: media_info["file_id"],
-                        }
-                        if media_info["caption"] and media_info["media_type"] not in [
-                            "sticker",
-                            "voice",
-                            "video_note",
-                        ]:
-                            kwargs["caption"] = media_info["caption"]
-                        await send_func(**kwargs)
+                    try:
+                        await telegram_service.send_media_by_type(
+                            client, str(dest_id), media_info
+                        )
                         logging.info(
                             f"Mídia {media_info['file_unique_id']} reenviada para {dest_id} como nova mensagem."
                         )
-                    else:
+                    except ValueError:
                         await message.forward(dest_id)
                         logging.info(
                             f"Mídia {media_info['file_unique_id']} encaminhada para {dest_id} via forward (tipo não suportado para envio manual)."
                         )
                 except Exception as e:
                     logging.error(f"Erro ao reenviar mídia para {dest_id}: {e}")
-
-
-async def send_media_from_cache(client, cached_media, destination_ids):
-    """Reenvia uma mídia a partir do cache usando o método apropriado."""
-    # Mapeia o media_type para o nome do método e o nome do parâmetro do arquivo
-    send_methods = {
-        "photo": (client.send_photo, "photo"),
-        "video": (client.send_video, "video"),
-        "audio": (client.send_audio, "audio"),
-        "document": (client.send_document, "document"),
-        "voice": (client.send_voice, "voice"),
-        "video_note": (client.send_video_note, "video_note"),
-        "sticker": (client.send_sticker, "sticker"),
-        "animation": (client.send_animation, "animation"),
-    }
-
-    send_func, file_param_name = send_methods.get(cached_media.media_type, (None, None))
-
-    if not send_func:
-        logging.warning(
-            f"Tipo de mídia '{cached_media.media_type}' não suportado para envio via cache."
-        )
-        return
-
-    for dest_id in destination_ids:
-        try:
-            kwargs = {
-                "chat_id": dest_id,
-                file_param_name: cached_media.file_id,
-            }
-            # Adiciona legenda apenas se o método suportar
-            if cached_media.caption and cached_media.media_type not in [
-                "sticker",
-                "voice",
-                "video_note",
-            ]:
-                kwargs["caption"] = cached_media.caption
-
-            await send_func(**kwargs)
-            logging.info(
-                f"Mídia {cached_media.file_unique_id} reenviada para {dest_id} a partir do cache."
-            )
-        except Exception as e:
-            logging.error(f"Erro ao reenviar mídia em cache para {dest_id}: {e}")
