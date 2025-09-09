@@ -7,6 +7,13 @@ import uvicorn
 from app.models.database import create_tables
 from app.api.routes import automations, sessions, channels, logs
 
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,  # Mostra INFO, WARNING e ERROR
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

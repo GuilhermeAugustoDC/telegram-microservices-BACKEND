@@ -21,7 +21,21 @@ class TelegramService:
         )
 
         await client.start()
-        self.active_clients[session_name] = client
+        self.active_clients[session_name] = {"client": client, "handlers": {}}
+        return client
+
+    async def get_or_create_client(self, session_name: str) -> Client:
+        """Retorna cliente existente ou cria um novo"""
+        if session_name not in self.active_clients:
+            logging.info(f"Iniciando cliente para a sessão {session_name}...")
+            client = await self.create_client(
+                session_name=session_name,
+                api_id=settings.API_ID,
+                api_hash=settings.API_HASH,
+            )
+        else:
+            client = self.active_clients[session_name]["client"]
+
         return client
 
     async def get_chat_info(self, session_name: str, chat_id: str) -> Dict[str, Any]:
@@ -40,9 +54,11 @@ class TelegramService:
             "is_verified": getattr(chat, "is_verified", None),
             "is_restricted": getattr(chat, "is_restricted", None),
             "description": getattr(chat, "description", None),
-            "photo_url": getattr(chat.photo, "big_file_id", None)
-            if getattr(chat, "photo", None)
-            else None,
+            "photo_url": (
+                getattr(chat.photo, "big_file_id", None)
+                if getattr(chat, "photo", None)
+                else None
+            ),
         }
 
     async def forward_message(
@@ -80,13 +96,16 @@ class TelegramService:
                     "file_size": getattr(media, "file_size", None),
                     "mime_type": getattr(media, "mime_type", None),
                     "caption": message.caption,
+                    "original_chat_id": str(message.chat.id),
+                    "original_message_id": message.id,
+                    "collected_at": message.date,
                 }
+
         return None
 
     async def send_media_by_type(
-        self, client: Client, chat_id: str, media_info: Dict[str, Any]
+        self, client, dest_id, media_info, caption_override=None
     ):
-        """Envia mídia usando o método apropriado baseado no tipo"""
         send_methods = {
             "photo": client.send_photo,
             "video": client.send_video,
@@ -100,42 +119,39 @@ class TelegramService:
 
         send_func = send_methods.get(media_info["media_type"])
         if not send_func:
-            raise ValueError(
-                f"Tipo de mídia '{media_info['media_type']}' não suportado"
-            )
+            raise ValueError("Tipo de mídia não suportado")
 
-        kwargs = {
-            "chat_id": chat_id,
-            media_info["media_type"]: media_info["file_id"],
-        }
-
-        # Adiciona caption se suportado pelo tipo de mídia
-        if media_info.get("caption") and media_info["media_type"] not in [
-            "sticker",
-            "voice",
-            "video_note",
-        ]:
+        kwargs = {"chat_id": dest_id, media_info["media_type"]: media_info["file_id"]}
+        if caption_override:
+            kwargs["caption"] = caption_override
+        elif media_info.get("caption"):
             kwargs["caption"] = media_info["caption"]
 
         await send_func(**kwargs)
 
     async def send_media_from_cache(
-        self, client: Client, cached_media: CollectedMedia, destination_ids: List[int]
+        self, client, cached_media, destination_ids, caption_override=None
     ):
-        """Reenvia mídia a partir do cache usando o método apropriado"""
+        send_methods = {
+            "photo": client.send_photo,
+            "video": client.send_video,
+            "audio": client.send_audio,
+            "document": client.send_document,
+            "voice": client.send_voice,
+            "video_note": client.send_video_note,
+            "sticker": client.send_sticker,
+            "animation": client.send_animation,
+        }
+
+        send_func = send_methods.get(cached_media.media_type)
+        if not send_func:
+            raise ValueError("Tipo de mídia não suportado para envio via cache")
+
         for dest_id in destination_ids:
-            try:
-                media_info = {
-                    "media_type": cached_media.media_type,
-                    "file_id": cached_media.file_id,
-                    "caption": cached_media.caption,
-                }
-                await self.send_media_by_type(client, str(dest_id), media_info)
-                logging.info(
-                    f"Mídia {cached_media.file_unique_id} reenviada para {dest_id} a partir do cache."
-                )
-            except Exception as e:
-                logging.error(f"Erro ao reenviar mídia em cache para {dest_id}: {e}")
+            kwargs = {"chat_id": dest_id, cached_media.media_type: cached_media.file_id}
+        if caption_override:
+            kwargs["caption"] = caption_override
+        await send_func(**kwargs)
 
     async def verify_and_join_channels(
         self, client: Client, chat_ids: List[int]

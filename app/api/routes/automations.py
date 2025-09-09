@@ -3,12 +3,21 @@ from sqlalchemy.orm import Session, joinedload
 from typing import List
 import logging
 
-from app.schemas.automation import Automation as AutomationSchema, AutomationCreate
+from app.schemas.automation import (
+    Automation as AutomationSchema,
+    AutomationCreate,
+    AutomationUpdate,
+)
 from app.models.database import AutomationModel, Chat, UserSession
 from app.api.dependencies import get_db
 from app.services.automation_handler import (
     start_automation_client,
     stop_automation_client,
+)
+from app.utils.data_base_utils.automation import (
+    set_automation_status,
+    create_automation,
+    get_automations,
 )
 
 router = APIRouter()
@@ -18,7 +27,7 @@ router = APIRouter()
 
 
 @router.post("/automations/", response_model=AutomationSchema)
-async def create_automation(
+async def create_automation_route(
     automation: AutomationCreate, db: Session = Depends(get_db)
 ):
     db_session = (
@@ -27,31 +36,15 @@ async def create_automation(
     if not db_session:
         raise HTTPException(status_code=404, detail="Sessão não encontrada")
 
-    db_automation = AutomationModel(
+    # Criação completa usando o CRUD
+    db_automation = create_automation(
+        db=db,
         name=automation.name,
-        is_active=False,
         session_id=automation.session_id,
+        caption=automation.caption,
+        source_chats=automation.source_chats,
+        destination_chats=automation.destination_chats,
     )
-
-    # Adiciona canais de origem
-    for chat_id in automation.source_chats:
-        chat = db.query(Chat).filter(Chat.chat_id == chat_id).first()
-        if not chat:
-            chat = Chat(chat_id=chat_id)
-            db.add(chat)
-        db_automation.source_channels.append(chat)
-
-    # Adiciona canais de destino
-    for chat_id in automation.destination_chats:
-        chat = db.query(Chat).filter(Chat.chat_id == chat_id).first()
-        if not chat:
-            chat = Chat(chat_id=chat_id)
-            db.add(chat)
-        db_automation.destination_channels.append(chat)
-
-    db.add(db_automation)
-    db.commit()
-    db.refresh(db_automation)
 
     return AutomationSchema.from_orm(db_automation)
 
@@ -60,20 +53,8 @@ async def create_automation(
 
 
 @router.get("/automations/", response_model=List[AutomationSchema])
-async def list_automations(
-    skip: int = 0, limit: int = 100, db: Session = Depends(get_db)
-):
-    automations = (
-        db.query(AutomationModel)
-        .options(
-            joinedload(AutomationModel.source_channels),
-            joinedload(AutomationModel.destination_channels),
-            joinedload(AutomationModel.session),
-        )
-        .offset(skip)
-        .limit(limit)
-        .all()
-    )
+async def list_automations(db: Session = Depends(get_db)):
+    automations = get_automations(db)
     return [AutomationSchema.from_orm(automation) for automation in automations]
 
 
@@ -81,22 +62,10 @@ async def list_automations(
 
 
 @router.put("/automations/{automation_id}/start")
-async def start_automation(automation_id: int, db: Session = Depends(get_db)):
-    automation = (
-        db.query(AutomationModel)
-        .options(
-            joinedload(AutomationModel.source_channels),
-            joinedload(AutomationModel.destination_channels),
-            joinedload(AutomationModel.session),
-        )
-        .filter(AutomationModel.id == automation_id)
-        .first()
-    )
+async def start_automation_route(automation_id: int, db: Session = Depends(get_db)):
+    automation = set_automation_status(db, automation_id, True)
     if not automation:
         raise HTTPException(status_code=404, detail="Automação não encontrada")
-
-    automation.is_active = True
-    db.commit()
 
     # Inicia o cliente de automação
     await start_automation_client(automation)
@@ -108,27 +77,12 @@ async def start_automation(automation_id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/automations/{automation_id}/stop")
-async def stop_automation(automation_id: int, db: Session = Depends(get_db)):
-    automation = (
-        db.query(AutomationModel)
-        .options(
-            joinedload(AutomationModel.source_channels),
-            joinedload(AutomationModel.destination_channels),
-            joinedload(AutomationModel.session),
-        )
-        .filter(AutomationModel.id == automation_id)
-        .first()
-    )
+async def stop_automation_route(automation_id: int, db: Session = Depends(get_db)):
+    automation = set_automation_status(db, automation_id, False)
     if not automation:
         raise HTTPException(status_code=404, detail="Automação não encontrada")
 
-    automation.is_active = False
-    db.commit()
-
-    # Para o cliente de automação
-    logging.info(f"Chamando stop_automation_client para automação {automation_id}")
-    result = await stop_automation_client(automation)
-    logging.info(f"Retorno de stop_automation_client: {result}")
+    await stop_automation_client(automation)
 
     return {"message": f"Automação {automation_id} parada com sucesso"}
 
@@ -155,3 +109,27 @@ async def delete_automation(automation_id: int, db: Session = Depends(get_db)):
     db.commit()
 
     return {"message": f"Automação {automation_id} removida com sucesso"}
+
+
+"""Atualiza dados de uma autmação"""
+
+
+@router.put("/automations/{automation_id}", response_model=AutomationSchema)
+async def update_automation(
+    automation_id: int, automation_data: AutomationUpdate, db: Session = Depends(get_db)
+):
+    automation = (
+        db.query(AutomationModel).filter(AutomationModel.id == automation_id).first()
+    )
+    if not automation:
+        raise HTTPException(status_code=404, detail="Automação não encontrada")
+
+    # Atualiza os campos fornecidos
+    if automation_data.name is not None:
+        automation.name = automation_data.name
+    if automation_data.caption is not None:
+        automation.caption = automation_data.caption
+
+    db.commit()
+    db.refresh(automation)
+    return AutomationSchema.from_orm(automation)

@@ -68,7 +68,7 @@ class AutomationModel(Base):
     is_active = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
+    caption = Column(String, nullable=True)
     session_id = Column(Integer, ForeignKey("user_sessions.id", ondelete="CASCADE"))
     session = relationship("UserSession", back_populates="automations")
 
@@ -179,7 +179,7 @@ class CollectedMedia(Base):
     )
     original_message_id = Column(Integer)
 
-    caption = Column(String(4096))  # Legenda da mídia
+    caption = Column(String, nullable=True)  # 👈 legenda customizada
 
     collected_at = Column(DateTime, default=datetime.utcnow)
 

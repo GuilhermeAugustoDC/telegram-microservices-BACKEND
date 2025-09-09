@@ -6,23 +6,15 @@ from pyrogram.errors import FloodWait
 import os
 from datetime import datetime, timedelta
 import asyncio
-
 from app.models.database import UserSession, CachedChannel
+from app.schemas.channel import ChannelInfo
+from math import ceil
 from app.api.dependencies import get_db
 from app.utils.logger import db_log
 from pydantic import BaseModel
 from app.config.config import settings
 
 router = APIRouter()
-
-
-class ChannelInfo(BaseModel):
-    id: str
-    title: str
-    username: str | None = None
-    is_channel: bool
-    members_count: int | None = None
-    photo_url: str | None = None
 
 
 """Lista todos os canais/grupos que o usuário participa"""
@@ -38,7 +30,6 @@ async def get_user_channels(
     if not session:
         raise HTTPException(status_code=404, detail="Sessão não encontrada")
 
-    # Verifica se o cache é recente (ex: 1 hora)
     CACHE_DURATION_HOURS = 1
     if (
         session.channels_last_updated
@@ -67,7 +58,6 @@ async def get_user_channels(
                 for c in cached_channels
             ]
 
-    # Se o cache não for válido, busca no Telegram
     message = f"Buscando {'novos ' if incremental else ''}canais no Telegram para a sessão {session_id}"
     db_log(
         "INFO",
@@ -77,26 +67,27 @@ async def get_user_channels(
     return await fetch_and_cache_channels(session, db, incremental)
 
 
-
-
 async def fetch_and_cache_channels(
     session: UserSession, db: Session, incremental: bool = False
 ) -> List[ChannelInfo]:
+    """
+    Busca canais no Telegram e atualiza o cache de forma segura,
+    com commits parciais para evitar "database is locked".
+    """
+
     session_file_path = (
         settings.SESSIONS_DIR
         / f"{session.phone_number}{settings.SESSION_EXTENSION_FILE}"
     )
-
-    session_name = str(session_file_path)
-    channels_list = []
+    session_name = session_file_path.stem
+    channels_list: List[ChannelInfo] = []
     existing_channels = set()
-    print(session_name)
-    if not os.path.exists(session_name):
+
+    if not os.path.exists(session_file_path):
         raise HTTPException(status_code=404, detail="Arquivo de sessão não encontrado")
 
-    session_name = session_file_path.stem
+    # Validando API credentials
     try:
-
         api_id = int(str(session.api_id).strip())
         api_hash = str(session.api_hash).strip()
     except (ValueError, TypeError):
@@ -110,7 +101,6 @@ async def fetch_and_cache_channels(
         )
 
     if incremental:
-        # Pega lista de canais já cacheados
         cached = (
             db.query(CachedChannel).filter(CachedChannel.session_id == session.id).all()
         )
@@ -123,11 +113,16 @@ async def fetch_and_cache_channels(
             api_hash=api_hash,
             workdir=str(settings.SESSIONS_DIR),
         ) as app:
+
+            # Limpa cache antigo apenas se não for incremental
             if not incremental:
-                # Limpa o cache antigo apenas se não for busca incremental
-                db.query(CachedChannel).filter(
-                    CachedChannel.session_id == session.id
-                ).delete()
+                with db.begin():
+                    db.query(CachedChannel).filter(
+                        CachedChannel.session_id == session.id
+                    ).delete()
+
+            BATCH_SIZE = 15  # commits parciais a cada N canais
+            batch_counter = 0
 
             async for dialog in app.get_dialogs():
                 chat = dialog.chat
@@ -144,7 +139,6 @@ async def fetch_and_cache_channels(
                         if chat.photo:
                             photo_dir = settings.PHOTO_GROUP_DIR
                             photo_path = os.path.join(photo_dir, f"{chat.id}.jpg")
-
                             if not os.path.exists(photo_path):
                                 try:
                                     await app.download_media(
@@ -169,7 +163,6 @@ async def fetch_and_cache_channels(
                             "photo_url": photo_url,
                         }
 
-
                         cached_channel = CachedChannel(
                             session_id=session.id, **channel_data
                         )
@@ -178,29 +171,37 @@ async def fetch_and_cache_channels(
                             ChannelInfo(id=str(chat.id), **channel_data)
                         )
 
+                        batch_counter += 1
+                        if batch_counter >= BATCH_SIZE:
+                            with db.begin():  # commit parcial
+                                db.flush()
+                            batch_counter = 0
+
                     except Exception as chat_error:
                         print(f"Erro ao processar chat {chat.id}: {chat_error}")
 
-            # Atualiza o timestamp e commita as mudanças
-            session.channels_last_updated = datetime.utcnow()
-            db.add(session)
-            db.commit()
+            # Commit final
+            with db.begin():
+                db.add(session)
+                session.channels_last_updated = datetime.utcnow()
+                db.flush()
 
     except FloodWait as e:
-        print(f"FloodWait: esperando por {e.value} segundos.")
         await asyncio.sleep(e.value)
         raise HTTPException(
             status_code=429,
             detail=f"Muitas requisições. Tente novamente em {e.value} segundos.",
         )
     except Exception as e:
-        print(f"[ERRO] Falha ao buscar canais para a sessão {session.id}: {e}")
         db.rollback()
         raise HTTPException(
             status_code=500, detail=f"Erro ao conectar ao Telegram: {e}"
         )
 
     channels_list.sort(key=lambda x: x.title.lower())
-    message = f"Sucesso! {len(channels_list)} novos canais foram adicionados ao cache para a sessão {session.id}."
-    db_log("INFO", message, f"channels:fetch_incremental:session_{session.id}")
+    db_log(
+        "INFO",
+        f"Sucesso! {len(channels_list)} novos canais adicionados ao cache para a sessão {session.id}.",
+        f"channels:fetch_incremental:session_{session.id}",
+    )
     return channels_list

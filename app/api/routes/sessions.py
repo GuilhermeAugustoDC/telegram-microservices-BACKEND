@@ -12,11 +12,12 @@ from pyrogram.errors import SessionPasswordNeeded, PhoneCodeInvalid, PhoneNumber
 import os
 import json
 from datetime import datetime
-
 from app.schemas.session import Session as SessionSchema
 from app.models.database import UserSession
 from app.api.dependencies import get_db
 from app.config.config import settings
+from app.utils.data_base_utils.user_session import *
+from app.utils.file_helpers import remove_file
 
 router = APIRouter()
 
@@ -25,8 +26,7 @@ router = APIRouter()
 
 @router.get("/sessions/", response_model=List[SessionSchema])
 async def list_sessions(db: Session = Depends(get_db)):
-    sessions = db.query(UserSession).all()
-    return sessions
+    return get_user_sessions(db)
 
 
 """Faz o download de um arquivo de sessão."""
@@ -52,17 +52,18 @@ async def download_session(phone_number: str):
 
 @router.delete("/sessions/{session_id}")
 async def delete_session(session_id: int, db: Session = Depends(get_db)):
-    # Remover do Banco De Dados
+
     session = db.query(UserSession).filter(UserSession.id == session_id).first()
+    session_file = settings.SESSIONS_DIR / session.session_file
+
     if not session:
         raise HTTPException(status_code=404, detail="Sessão não encontada")
 
-    session_file = settings.SESSIONS_DIR / session.session_file
     if not os.path.exists(session_file):
         raise HTTPException(status_code=404, detail="Sessão não encontada no Diretorio")
-    os.remove(session_file)
-    db.delete(session)
-    db.commit()
+
+    remove_file(str(session_file))
+    delete_user_session(db, session_id)
     return {"detail": "Sessão removida com sucesso"}
 
 
@@ -112,17 +113,13 @@ async def generate_session_ws(
                 # arquivo da sessão
                 session_filename = f"{phone_number}.session"
 
-                session_data = UserSession(
+                session_data = create_user_session(
                     session_file=session_filename,
                     phone_number=phone_number,
                     api_id=api_id,
                     api_hash=api_hash,
-                    created_at=datetime.utcnow(),
+                    db=db,
                 )
-
-                db.add(session_data)
-                db.commit()
-                db.refresh(session_data)
 
                 await websocket.send_text(
                     json.dumps(
@@ -152,16 +149,13 @@ async def generate_session_ws(
                 await client.check_password(password)
 
                 session_filename = f"{phone_number}.session"
-                session_data = UserSession(
+                session_data = create_user_session(
+                    db=db,
                     session_file=session_filename,
                     phone_number=phone_number,
                     api_id=api_id,
                     api_hash=api_hash,
-                    created_at=datetime.utcnow(),
                 )
-                db.add(session_data)
-                db.commit()
-                db.refresh(session_data)
 
                 await websocket.send_text(
                     json.dumps(

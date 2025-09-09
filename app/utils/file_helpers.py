@@ -42,6 +42,14 @@ def is_video_file(filename: str) -> bool:
     return get_file_extension(filename) in video_extensions
 
 
+def remove_file(file_path: str) -> bool:
+    """Remove arquivo se existir"""
+    if not os.path.exists(file_path):
+        return False
+    os.remove(file_path)
+    return True
+
+
 def clean_old_files(directory: str, days_old: int = 7) -> int:
     """Remove arquivos mais antigos que N dias"""
     if verify_directory_exist(directory):
