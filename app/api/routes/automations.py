@@ -68,6 +68,7 @@ async def start_automation_route(automation_id: int, db: Session = Depends(get_d
         raise HTTPException(status_code=404, detail="Automação não encontrada")
 
     # Inicia o cliente de automação
+
     await start_automation_client(automation)
 
     return {"message": f"Automação {automation_id} iniciada com sucesso"}

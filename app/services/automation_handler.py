@@ -1,3 +1,4 @@
+from typing import List
 from pyrogram import Client, filters
 from pyrogram.handlers import MessageHandler
 
@@ -9,7 +10,6 @@ from app.models.database import CollectedMedia
 from datetime import datetime
 from app.schemas import automation
 from app.services.telegram_services import TelegramService
-from app.utils.mensage_helpers import build_caption
 
 telegram_service = TelegramService()
 active_clients = telegram_service.active_clients
@@ -272,126 +272,30 @@ async def stop_automation_client(automation):
     logging.info(f"[STOP] Stop da automação {automation_id} finalizado")
 
 
-async def forward_history(client, automation):
-    automation_id = automation.id
-    logging.info(f"[FORWARD] Iniciando forward_history para automação {automation_id}")
-    await asyncio.sleep(2)
-
-    for source_channel in automation.source_channels:
-        logging.info(f"[FORWARD] Buscando histórico do canal {source_channel.chat_id}")
-
-        try:
-            async for message in client.get_chat_history(source_channel.chat_id):
-                if automation_stop_flags.get(automation_id, False):
-                    logging.info(
-                        f"[FORWARD] Flag de stop ativa, saindo do loop de histórico"
-                    )
-                    return
-
-                if message.service:
-                    continue
-
-                destination_ids = [ch.chat_id for ch in automation.destination_channels]
-                logging.info(f"[FORWARD] Processando mensagem {message.id}")
-                try:
-                    await process_and_forward_message(client, message, destination_ids)
-                except Exception as e:
-                    logging.error(f"[FORWARD] Erro ao encaminhar msg {message.id}: {e}")
-                await asyncio.sleep(1)
-        except Exception as e:
-            logging.error(
-                f"[FORWARD] Erro ao buscar histórico do canal {source_channel.chat_id}: {e}"
-            )
-
-    logging.info(f"[FORWARD] Forward_history da automação {automation_id} concluído")
-
-    """Busca e encaminha histórico de mensagens de canais de origem para canais de destino."""
-    automation_id = automation.id
-    logging.info(
-        f"Iniciando histórico para automação '{automation.name}' (ID: {automation_id})"
-    )
-    await asyncio.sleep(2)  # Garante que o cliente esteja pronto
-
-    for source_channel in automation.source_channels:
-        logging.info(f"Buscando histórico do canal {source_channel.chat_id}")
-
-        try:
-            async for message in client.get_chat_history(source_channel.chat_id):
-                # Verifica flag de stop
-                if automation_stop_flags.get(automation_id, False):
-                    logging.info(
-                        f"Automação {automation_id} flag de stop ativa. Saindo do loop."
-                    )
-                    return
-
-                if message.service:  # Pula mensagens de serviço
-                    continue
-
-                destination_ids = [ch.chat_id for ch in automation.destination_channels]
-                await process_and_forward_message(client, message, destination_ids)
-                await asyncio.sleep(1)  # Evita limite de taxa
-
-        except Exception as e:
-            logging.error(
-                f"Erro ao buscar histórico do canal {source_channel.chat_id}: {e}"
-            )
-
-    logging.info(
-        f"Encaminhamento do histórico da automação '{automation.name}' concluído."
-    )
-
-    """Busca e encaminha o histórico de mensagens de canais de origem para canais de destino."""
-    logging.info(
-        f"Iniciando encaminhamento do histórico para a automação '{automation.name}' (ID: {automation.id})"
-    )
-    await asyncio.sleep(2)  # Pequeno atraso para garantir que o cliente esteja pronto
-
-    for source_channel in automation.source_channels:
-        logging.info(f"Buscando histórico do canal de origem: {source_channel.chat_id}")
-        try:
-            async for message in client.get_chat_history(source_channel.chat_id):
-                if (
-                    message.service
-                ):  # Pular mensagens de serviço (ex: usuário entrou no grupo)
-                    continue
-
-                destination_ids = [ch.chat_id for ch in automation.destination_channels]
-                await process_and_forward_message(client, message, destination_ids)
-                # Pausa para evitar limites de taxa do Telegram
-                await asyncio.sleep(1)
-        except Exception as e:
-            logging.error(
-                f"Erro ao buscar histórico do canal {source_channel.chat_id}: {e}"
-            )
-
-    logging.info(
-        f"Encaminhamento do histórico para a automação '{automation.name}' concluído."
-    )
-
-
 async def process_and_forward_message(
-    client, message, destination_ids, automation=None
+    client, message, destination_ids: List[int], automation=None
 ):
     """
     Encaminha mensagens com ou sem mídia, aplicando legenda da automação
-    e evitando envio duplicado de mídias.
+    e evitando envio duplicado de mídias. Atualiza file_id expirado automaticamente.
     """
-
-    def build_caption(original: str | None, automation_caption: str | None) -> str:
-        if automation_caption:
-            return (
-                f"{original}\n\n{automation_caption}"
-                if original
-                else automation_caption
-            )
-        return original or ""
-
     caption_override = automation.caption if automation else None
+
+    # --- Extrai informações de mídia
     media_info = await telegram_service.get_media_info(message)
+    logging.info(f"[PROCESS] Processando mensagem {message.id} de {message.chat.id}")
 
     # --- Mensagem apenas texto
     if not media_info:
-        text_to_send = build_caption(message.text, caption_override)
+        text_to_send = telegram_service.build_caption(
+            getattr(message, "text", ""), caption_override
+        )
+        if not text_to_send or text_to_send.strip() == "":
+            logging.warning(
+                f"[TEXTO] Mensagem {message.id} está vazia. Ignorando envio."
+            )
+            return
+
         for dest_id in destination_ids:
             try:
                 await client.send_message(dest_id, text_to_send)
@@ -402,69 +306,131 @@ async def process_and_forward_message(
                 )
         return
 
-    # --- Mensagem com mídia
-    loop = asyncio.get_event_loop()
-
-    def sync_db_block():
-        with SessionLocal() as db:
-            return (
-                db.query(CollectedMedia)
-                .filter_by(file_unique_id=media_info["file_unique_id"])
-                .first()
-            )
-
-    cached_media = await loop.run_in_executor(None, sync_db_block)
-
+    # --- Verifica cache de mídia
+    cached_media = await telegram_service.get_cached_media(media_info["file_unique_id"])
     if cached_media:
         logging.info(
             f"[CACHE] Mídia {cached_media.file_unique_id} encontrada. Reenviando."
         )
         for dest_id in destination_ids:
             try:
-                final_caption = build_caption(cached_media.caption, caption_override)
                 await telegram_service.send_media_from_cache(
-                    client, cached_media, [dest_id], caption_override=final_caption
+                    client, cached_media, [dest_id], caption_override
                 )
             except Exception as e:
-                logging.error(f"[CACHE] Erro ao reenviar mídia para {dest_id}: {e}")
+                # Detecta file_id expirado ou inválido
+                if any(
+                    x in str(e)
+                    for x in [
+                        "FILE_REFERENCE_EXPIRED",
+                        "FILE_ID_INVALID",
+                        "file_reference",
+                    ]
+                ):
+                    logging.info(
+                        f"[RECUPERAR] File_id expirado para {cached_media.file_unique_id}, atualizando..."
+                    )
+                    updated_media = await telegram_service.update_media_info(
+                        client, cached_media
+                    )
+                    if updated_media:
+                        try:
+                            await telegram_service.send_media_from_cache(
+                                client, updated_media, [dest_id], caption_override
+                            )
+                            logging.info(
+                                f"[SUCESSO] Mídia {updated_media.file_unique_id} reenviada após atualização"
+                            )
+                        except Exception as e2:
+                            logging.error(
+                                f"[FALHA] Mesmo após atualização não foi possível enviar: {e2}"
+                            )
+                    continue
+                logging.error(
+                    f"[CACHE] Erro ao reenviar mídia {cached_media.file_unique_id}: {e}"
+                )
         return
 
     # --- Salva mídia no cache
-    def sync_db_add():
-        with SessionLocal() as db:
-            new_media = CollectedMedia(
-                file_unique_id=media_info["file_unique_id"],
-                file_id=media_info["file_id"],
-                media_type=media_info["media_type"],
-                mime_type=media_info["mime_type"],
-                file_size=media_info["file_size"],
-                original_chat_id=str(message.chat.id),
-                original_message_id=message.id,
-                caption=media_info.get("caption"),
-                collected_at=datetime.utcnow(),
-            )
-            db.add(new_media)
-            db.commit()
-            db.refresh(new_media)
-            return new_media
-
-    new_media = await loop.run_in_executor(None, sync_db_add)
+    new_media = await telegram_service.save_media_to_cache(media_info)
     logging.info(f"[CACHE] Mídia salva com id={new_media.id}")
 
     # --- Envia mídia
     for dest_id in destination_ids:
         try:
-            final_caption = build_caption(media_info.get("caption"), caption_override)
             await telegram_service.send_media_by_type(
-                client, str(dest_id), media_info, caption_override=final_caption
+                client, dest_id, media_info, caption_override
             )
             logging.info(
                 f"[MÍDIA] Mídia {media_info['file_unique_id']} enviada para {dest_id}"
             )
-        except ValueError:
-            await message.forward(dest_id)
-            logging.info(
-                f"[MÍDIA] Mídia {media_info['file_unique_id']} encaminhada via forward para {dest_id}"
-            )
         except Exception as e:
-            logging.error(f"[MÍDIA] Erro ao enviar mídia para {dest_id}: {e}")
+            # Detecta file_id expirado ou inválido
+            if any(
+                x in str(e)
+                for x in ["FILE_REFERENCE_EXPIRED", "FILE_ID_INVALID", "file_reference"]
+            ):
+                logging.info(
+                    f"[RECUPERAR] File_id expirado para {media_info['file_unique_id']}, atualizando..."
+                )
+                updated_media = await telegram_service.update_media_info(
+                    client, new_media
+                )
+                if updated_media:
+                    try:
+                        await telegram_service.send_media_from_cache(
+                            client, updated_media, [dest_id], caption_override
+                        )
+                        logging.info(
+                            f"[SUCESSO] Mídia {updated_media.file_unique_id} reenviada após atualização"
+                        )
+                    except Exception as e2:
+                        logging.error(
+                            f"[FALHA] Mesmo após atualização não foi possível enviar: {e2}"
+                        )
+            else:
+                logging.error(f"[MÍDIA] Erro ao enviar mídia para {dest_id}: {e}")
+
+
+async def forward_history(client, automation):
+    """
+    Busca e encaminha o histórico de mensagens de canais de origem para canais de destino.
+    """
+    automation_id = automation.id
+    logging.info(
+        f"[FORWARD] Iniciando encaminhamento de histórico para automação '{automation.name}' (ID: {automation_id})"
+    )
+    await asyncio.sleep(2)  # Garante que o cliente esteja pronto
+
+    for source_channel in automation.source_channels:
+        logging.info(f"[FORWARD] Buscando histórico do canal {source_channel.chat_id}")
+        try:
+            async for message in client.get_chat_history(source_channel.chat_id):
+                # Verifica flag de stop
+                if getattr(automation, "stop_flag", False):
+                    logging.info(
+                        f"[FORWARD] Automação {automation_id} interrompida por flag de stop."
+                    )
+                    return
+
+                # Pula mensagens de serviço
+                if getattr(message, "service", False):
+                    continue
+
+                destination_ids = [ch.chat_id for ch in automation.destination_channels]
+                try:
+                    await process_and_forward_message(
+                        client, message, destination_ids, automation
+                    )
+                except Exception as e:
+                    logging.error(f"[FORWARD] Erro ao encaminhar msg {message.id}: {e}")
+
+                await asyncio.sleep(1)  # Evita limite de taxa
+        except Exception as e:
+            logging.error(
+                f"[FORWARD] Erro ao buscar histórico do canal {source_channel.chat_id}: {e}"
+            )
+
+    logging.info(
+        f"[FORWARD] Encaminhamento do histórico da automação '{automation.name}' concluído."
+    )
