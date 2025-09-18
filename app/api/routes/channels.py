@@ -116,10 +116,10 @@ async def fetch_and_cache_channels(
 
             # Limpa cache antigo apenas se não for incremental
             if not incremental:
-                with db.begin():
-                    db.query(CachedChannel).filter(
-                        CachedChannel.session_id == session.id
-                    ).delete()
+                db.query(CachedChannel).filter(
+                    CachedChannel.session_id == session.id
+                ).delete()
+                db.commit()
 
             BATCH_SIZE = 15  # commits parciais a cada N canais
             batch_counter = 0
@@ -173,18 +173,17 @@ async def fetch_and_cache_channels(
 
                         batch_counter += 1
                         if batch_counter >= BATCH_SIZE:
-                            with db.begin():  # commit parcial
-                                db.flush()
+                            db.flush()
+                            db.commit()
                             batch_counter = 0
 
                     except Exception as chat_error:
                         print(f"Erro ao processar chat {chat.id}: {chat_error}")
 
             # Commit final
-            with db.begin():
-                db.add(session)
-                session.channels_last_updated = datetime.utcnow()
-                db.flush()
+            session.channels_last_updated = datetime.utcnow()
+            db.add(session)
+            db.commit()
 
     except FloodWait as e:
         await asyncio.sleep(e.value)
