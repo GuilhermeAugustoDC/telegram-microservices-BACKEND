@@ -44,6 +44,9 @@ Thumbs.db
 logs/
 *.log.*
 
+# Diretorios
+app/static
+
 # Arquivos de build e distribuição
 build/
 dist/

@@ -23,6 +23,15 @@ from app.utils.data_base_utils.automation import (
 router = APIRouter()
 
 
+"""Lista todas as automações"""
+
+
+@router.get("/automations/", response_model=List[AutomationSchema])
+async def list_automations(db: Session = Depends(get_db)):
+    automations = get_automations(db)
+    return [AutomationSchema.from_orm(automation) for automation in automations]
+
+
 """Cria uma nova automação"""
 
 
@@ -47,15 +56,6 @@ async def create_automation_route(
     )
 
     return AutomationSchema.from_orm(db_automation)
-
-
-"""Lista todas as automações"""
-
-
-@router.get("/automations/", response_model=List[AutomationSchema])
-async def list_automations(db: Session = Depends(get_db)):
-    automations = get_automations(db)
-    return [AutomationSchema.from_orm(automation) for automation in automations]
 
 
 """Inicia uma automação"""

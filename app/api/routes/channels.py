@@ -26,45 +26,50 @@ async def get_user_channels(
     incremental: bool = False,
     db: Session = Depends(get_db),
 ):
-    session = db.query(UserSession).filter(UserSession.id == session_id).first()
-    if not session:
-        raise HTTPException(status_code=404, detail="Sessão não encontrada")
+    try:
+        session = db.query(UserSession).filter(UserSession.id == session_id).first()
+        if not session:
+            raise HTTPException(
+                status_code=404, detail=f"Sessão {session_id} não encontrada"
+            )
 
-    CACHE_DURATION_HOURS = 1
-    if (
-        session.channels_last_updated
-        and (datetime.utcnow() - session.channels_last_updated)
-        < timedelta(hours=CACHE_DURATION_HOURS)
-        and not incremental
-    ):
-        cached_channels = (
-            db.query(CachedChannel)
-            .filter(CachedChannel.session_id == session_id)
-            .order_by(CachedChannel.title.asc())
-            .all()
+        CACHE_DURATION_HOURS = 1
+        if (
+            session.channels_last_updated
+            and (datetime.utcnow() - session.channels_last_updated)
+            < timedelta(hours=CACHE_DURATION_HOURS)
+            and not incremental
+        ):
+            cached_channels = (
+                db.query(CachedChannel)
+                .filter(CachedChannel.session_id == session_id)
+                .order_by(CachedChannel.title.asc())
+                .all()
+            )
+            if cached_channels:
+                message = f"Retornando {len(cached_channels)} canais do cache para a sessão {session_id}."
+                db_log("INFO", message, f"channels:cache_hit:session_{session_id}")
+                return [
+                    ChannelInfo(
+                        id=str(c.channel_id),
+                        title=c.title,
+                        username=c.username,
+                        is_channel=c.is_channel,
+                        members_count=c.members_count,
+                        photo_url=c.photo_url,
+                    )
+                    for c in cached_channels
+                ]
+
+        message = f"Buscando {'novos ' if incremental else ''}canais no Telegram para a sessão {session_id}"
+        db_log(
+            "INFO",
+            message,
+            f"channels:{'incremental_' if incremental else ''}fetch:session_{session_id}",
         )
-        if cached_channels:
-            message = f"Retornando {len(cached_channels)} canais do cache para a sessão {session_id}."
-            db_log("INFO", message, f"channels:cache_hit:session_{session_id}")
-            return [
-                ChannelInfo(
-                    id=str(c.channel_id),
-                    title=c.title,
-                    username=c.username,
-                    is_channel=c.is_channel,
-                    members_count=c.members_count,
-                    photo_url=c.photo_url,
-                )
-                for c in cached_channels
-            ]
-
-    message = f"Buscando {'novos ' if incremental else ''}canais no Telegram para a sessão {session_id}"
-    db_log(
-        "INFO",
-        message,
-        f"channels:{'incremental_' if incremental else ''}fetch:session_{session_id}",
-    )
-    return await fetch_and_cache_channels(session, db, incremental)
+        return await fetch_and_cache_channels(session, db, incremental)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
 
 
 async def fetch_and_cache_channels(
