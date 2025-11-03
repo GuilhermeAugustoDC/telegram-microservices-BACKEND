@@ -7,9 +7,9 @@ from typing import Optional
 class AutomationBase(BaseModel):
     name: str
     source_chats: List[str]  # Múltiplos canais de origem
-    destination_chats: List[str]
+    destination_chats: List[str]  # Múltiplos canais de Destino
     session_id: int
-    caption: str | None = None  # 👈 novo campo
+    caption: str | None = None
 
 
 class AutomationCreate(AutomationBase):
@@ -51,5 +51,5 @@ class Automation(BaseModel):
             is_active=obj.is_active,
             created_at=obj.created_at,
             updated_at=obj.updated_at,
-            caption=obj.caption,  # <- adicione esta linha
+            caption=obj.caption,
         )

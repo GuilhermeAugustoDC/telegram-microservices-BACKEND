@@ -181,10 +181,20 @@ class TelegramService:
         return await loop.run_in_executor(None, sync_db)
 
     async def save_media_to_cache(self, media_info: Dict[str, Any]) -> CollectedMedia:
+        if not media_info or not media_info.get("file_unique_id"):
+            return None
         loop = asyncio.get_event_loop()
 
         def sync_db_add():
             with SessionLocal() as db:
+                # Verifica se a mídia já existe no banco
+                existing_media = (
+                    db.query(CollectedMedia)
+                    .filter_by(file_unique_id=media_info["file_unique_id"])
+                    .first()
+                )
+                if existing_media:
+                    return existing_media  # Retorna a existente sem inserir duplicata
                 new_media = CollectedMedia(
                     file_unique_id=media_info["file_unique_id"],
                     file_id=media_info["file_id"],
